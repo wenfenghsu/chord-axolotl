@@ -4,6 +4,26 @@ const TRACK_FILES={
  xwg:'音樂 MP3/Mayday五月天[笑忘歌] HD MV官方完整版.mp3',
  ifu:'音樂 MP3/LUNA SEA - 「I for You」MV.mp3'
 };
+function songIdForFilename(name){
+ const normalized=name.toLowerCase().replace(/[\s_\-「」\[\]()]/g,'');
+ return normalized.includes('笑忘歌')?'xwg':normalized.includes('倔強')?'jue':normalized.includes('iforyou')?'ifu':normalized.includes('complicated')?'comp':normalized.includes('girlfriend')?'gf':null;
+}
+async function discoverLocalTracks(){
+ if(!localMusicAvailable() || location.protocol==='file:')return;
+ try{
+  const base=new URL('音樂 MP3/',location.href),response=await fetch(base,{cache:'no-store'});
+  if(!response.ok)return;
+  const page=new DOMParser().parseFromString(await response.text(),'text/html'),matches={};
+  page.querySelectorAll('a[href]').forEach(link=>{
+   const url=new URL(link.getAttribute('href'),base);
+   if(url.origin!==base.origin || !url.pathname.startsWith(base.pathname) || !/\.mp3$/i.test(url.pathname))return;
+   const name=decodeURIComponent(url.pathname.split('/').at(-1)),id=songIdForFilename(name);
+   if(id)(matches[id]||=[]).push('音樂 MP3/'+name);
+  });
+  Object.entries(matches).forEach(([id,paths])=>{if(paths.length===1)TRACK_FILES[id]=paths[0];});
+  refreshOriginalSettings();
+ }catch(e){/* Manual file selection remains available. */}
+}
 function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function formatTime(s){s=Math.max(0,Math.floor(s||0));return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;}
 function inputLatencySeconds(){return clamp(Number($('#inputLatency').value)||0,0,500)/1000;}

@@ -142,6 +142,7 @@ $('#backVol').oninput = ()=>{ if (A.backGain) A.backGain.gain.value = (+$('#back
   $('#patSel').parentElement.style.opacity = .4;
   G.cands = COMMON;
   renderSongs();
+  discoverLocalTracks();
   listDevices();
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
     toast('這個瀏覽器不支援錄音，請用 Chrome 或 Edge 開啟', 6000);

@@ -139,4 +139,8 @@ test('MP3 completion produces the final score and transition table without an ex
  assert.equal(run('G.running'),false);assert.equal(run("$('#resScore').textContent"),150);
  assert.equal(run("$('#resAcc').textContent"),'50%');assert.ok(run("$('#resTrans').innerHTML.includes('C → G')"));
 });
+test('new MP3 filenames map to all five songs, including Girlfriend spacing variants',()=>{
+ for(const [file,id] of [['五月天 倔強 Official MV.mp3','jue'],['笑忘歌.mp3','xwg'],['LUNA SEA - 「I for You」MV.mp3','ifu'],['Avril Lavigne - Complicated.mp3','comp'],['Avril Lavigne - Girl Friend.mp3','gf']])assert.equal(run(`songIdForFilename(${JSON.stringify(file)})`),id);
+ assert.equal(run("songIdForFilename('other-song.mp3')"),null);
+});
 console.log(`${count} regression checks passed`);
