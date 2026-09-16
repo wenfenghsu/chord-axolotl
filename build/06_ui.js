@@ -131,78 +131,9 @@ $('#bgFile').onchange = async e => {
 $('#btnBgClear').onclick = clearLocalAudio;
 $('#backVol').oninput = ()=>{ if (A.backGain) A.backGain.gain.value = (+$('#backVol').value/100)*0.5; if(G.bgGain)G.bgGain.gain.value=+$('#backVol').value/100; };
 
-/* ---------- 和弦譜編輯器 ---------- */
-function editorOpen(){
-  const s = $('#edSong'); s.innerHTML = '';
-  G.songs.forEach((sg,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=sg.title; s.appendChild(o); });
-  s.value = Math.max(0, G.songs.indexOf(G.song));
-  edSecFill();
-  $('#edChordList').innerHTML = Object.keys(SHAPES).map(n=>`<span class="tag">${n}</span>`).join('');
-}
-function edSecFill(){
-  const sg = G.songs[+$('#edSong').value];
-  const s = $('#edSec'); s.innerHTML = '';
-  sg.sections.forEach((sec,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=sec.name; s.appendChild(o); });
-  edLoad();
-}
-function edLoad(){
-  const sg = G.songs[+$('#edSong').value];
-  $('#edText').value = sg.sections[+$('#edSec').value].chords;
-}
-$('#edSong').onchange = edSecFill;
-$('#edSec').onchange = edLoad;
-$('#edSave').onclick = ()=>{
-  const sg = G.songs[+$('#edSong').value];
-  const raw = $('#edText').value;
-  // 支援自訂指法：Gm=355333
-  const toks = raw.replace(/\|/g,' ').split(/\s+/).filter(Boolean);
-  const out = [];
-  for (const t of toks){
-    if (t.includes('=')){
-      const [n, sh] = t.split('=');
-      if (!/^[A-G][#b]?(?:m|maj|sus|add|dim|aug)?[0-9]*(?:\/[A-G][#b]?)?$/.test(n) || !/^[0-9xX]{6}$/.test(sh)){ $('#edMsg').textContent = `指法要六個字元：${t}`; return; }
-      SHAPES[n] = sh.toLowerCase();
-      out.push(n);
-    } else out.push(t);
-  }
-  if(!out.length){$('#edMsg').textContent='請至少輸入一個和弦';return;}
-  const bad = out.filter(c=>!chordInfo(c));
-  if (bad.length){ $('#edMsg').textContent = '沒有指法的和弦：' + [...new Set(bad)].join(' ') + '（可用 名稱=指法 自己定義）'; return; }
-  sg.sections[+$('#edSec').value].chords = out.join(' ');
-  saveSongs();
-  localStorage.setItem('axo_shapes', JSON.stringify(SHAPES));
-  $('#edMsg').textContent = `已儲存 ✔（${out.length} 小節）`;
-  setTimeout(()=>$('#edMsg').textContent='', 2500);
-};
-$('#edAddSec').onclick = ()=>{
-  const sg = G.songs[+$('#edSong').value];
-  const name = prompt('段落名稱', '新段落' + (sg.sections.length+1));
-  if (!name) return;
-  sg.sections.push({name, chords:'C G Am F'});
-  saveSongs(); edSecFill();
-  $('#edSec').value = sg.sections.length-1; edLoad();
-};
-$('#edNewSong').onclick = ()=>{
-  const title = prompt('歌名');
-  if (!title) return;
-  G.songs.push({id:'u'+Date.now(), title, artist:'自訂', note:'自己加的譜', bpm:72,
-    sections:[{name:'段落 1', chords:'C G Am F'}]});
-  saveSongs(); editorOpen();
-  $('#edSong').value = G.songs.length-1; edSecFill();
-};
-$('#edReset').onclick = ()=>{
-  if (!confirm('把所有歌曲還原成內建版本？自訂的譜會不見。')) return;
-  localStorage.removeItem('axo_songs');
-  loadSongs(); G.song = null; editorOpen(); renderSongs();
-  $('#edMsg').textContent = '已還原';
-};
-
 /* ---------- 啟動 ---------- */
 (function init(){
-  try{
-    const sh = JSON.parse(localStorage.getItem('axo_shapes')||'null');
-    if (sh) Object.assign(SHAPES, sh);
-  }catch(e){}
+  setupMedia();
   loadSongs();
   buildChromaBars();
   const ps = $('#patSel');

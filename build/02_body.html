@@ -8,7 +8,6 @@
      牠聽得到你彈的每一下 —— 彈對了牠會跳起來。</p>
   <div class="row" style="justify-content:center;margin-top:18px">
     <button class="btn" onclick="go('scSetup')">開始</button>
-    <button class="btn ghost" onclick="go('scEditor')">編輯和弦譜</button>
   </div>
   <p class="sub" style="font-size:12px;margin-top:26px">Cindy 專用 · 需要麥克風/音源輸入權限</p>
 </div>
@@ -76,7 +75,7 @@
 
   <h2 style="margin-top:18px">選難度</h2>
   <div class="diff" id="diffRow">
-    <button data-d="easy" class="sel">簡單<small>每小節彈一下／自由慢練</small></button>
+    <button data-d="easy" class="sel">簡單<small>原曲換和弦刷一下／自由慢練</small></button>
     <button data-d="mid">中等<small>跟著歌曲，每小節彈四下</small></button>
     <button data-d="hard">困難<small>照指定節奏型彈</small></button>
   </div>
@@ -100,7 +99,7 @@
   <div class="card" style="margin-top:10px">
     <div class="row">
       <b style="font-size:15px">播放來源</b>
-      <select id="sourceMode"><option value="youtube">官方 YouTube 原曲</option><option value="practice">合成伴奏／本機音檔</option></select>
+      <select id="sourceMode"><option value="mp3">MP3 原曲跟彈</option><option value="practice">合成伴奏／本機音檔</option></select>
       <span class="sub">練習伴奏</span>
       <select id="backMode">
         <option value="drums+bass">鼓 ＋ Bass</option>
@@ -127,17 +126,12 @@
 
   <div class="card" id="originalSettings" style="margin-top:12px">
     <h2 style="font-size:19px">跟原唱一起練</h2>
-    <p class="sub" id="originalInfo">選一首歌即可播放官方 MV。</p>
-    <p class="sub">戴耳機聽原曲，輸入裝置只收吉他。未校對的簡化譜不拿來判原曲對錯；可先自由跟彈，或加入已校對的時間譜。</p>
-    <details><summary>設定原曲時間譜與輸入延遲</summary>
-      <p class="sub">每行是一小節：「影片秒數 和弦」，最後一行「秒數 END」。例如 12.5 C、15.5 G、18.5 END（請換成這支 MV 的正確譜）。每小節 4 拍；不彈的段落可用 REST。儲存後三種難度都能跟影片評分。</p>
-      <textarea id="originalChart" aria-label="原曲時間譜" placeholder="每行：影片秒數 和弦；最後一行：影片秒數 END" style="min-height:150px"></textarea>
-      <div class="row"><button class="btn small" id="saveOriginalChart">儲存已校對的時間譜</button><button class="btn small ghost" id="clearOriginalChart">移除時間譜</button><span id="chartStatus" class="sub" role="status"></span></div>
-      <p class="sub"><label>輸入延遲補償 <input id="inputLatency" type="number" min="0" max="500" step="10" value="0" style="width:85px"> 毫秒</label>（吉他收音比實際刷弦晚多久；不確定先用 0）</p>
-    </details>
+    <p class="sub" id="originalInfo">選歌後直接播放你的 MP3。</p>
+    <p class="sub">本機自動讀取「音樂 MP3」資料夾；線上版請選取電腦裡的音檔，不會上傳。內建原調三和弦跟彈編配，無須自己改譜。</p>
+    <div class="row"><button class="btn small" id="btnOriginalPick">選取這首的 MP3</button><span class="sub" id="originalFileName">先選歌，再選音檔</span><input type="file" id="originalFile" accept="audio/mpeg,.mp3" class="hide"></div>
+    <p class="sub"><label>輸入延遲補償 <input id="inputLatency" type="number" min="0" max="500" step="10" value="0" style="width:85px"> 毫秒</label>（不確定先用 0）</p>
   </div>
   <div class="row" style="justify-content:flex-end;margin-top:14px">
-    <button class="btn ghost" onclick="go('scEditor')">改和弦譜</button>
     <button class="btn" id="btnStart">開始練習 ♪</button>
   </div>
 </div>
@@ -158,9 +152,14 @@
     </div>
   </div>
 
-  <div id="videoPanel" class="card" hidden>
-    <div id="youtubePlayer"></div>
-    <div class="video-info"><b id="videoTitle"></b><p id="videoStatus" role="status" class="sub">載入播放器…</p><a id="videoLink" target="_blank" rel="noopener noreferrer">在 YouTube 開啟官方影片 ↗</a><p class="sub">影片若無法自動播放，請點播放器的播放鍵。</p><label class="sub">原曲音量 <input id="youtubeVolume" type="range" min="0" max="100" value="45"></label></div>
+  <div id="trackPanel" class="card" hidden>
+    <div class="track-info"><b id="trackTitle"></b><p id="trackStatus" role="status" class="sub">讀取 MP3…</p></div>
+    <audio id="audioPlayer" controls preload="metadata"></audio>
+    <label class="sub">原曲音量 <input id="mp3Volume" type="range" min="0" max="100" value="45"></label>
+  </div>
+  <div id="rhythmCoach" class="card" hidden>
+    <b id="rhythmCaption">跟著亮格的箭頭刷弦</b>
+    <div id="rhythmGuide" aria-label="八分音符刷弦節奏"></div>
   </div>
   <div id="playMid">
     <div class="axo-wrap">
@@ -220,33 +219,6 @@
     <button class="btn" id="btnRetry">再來一次</button>
     <button class="btn ghost" onclick="go('scSelect')">換一首</button>
   </div>
-</div>
-
-<!-- ================= 和弦譜編輯 ================= -->
-<div class="screen" id="scEditor">
-  <div class="row" style="justify-content:space-between">
-    <h2>編輯和弦譜</h2>
-    <button class="btn ghost small" onclick="go('scSelect')">← 回選歌</button>
-  </div>
-  <div class="note-warn" style="margin-bottom:12px">
-    <b>請先看這裡：</b>內建的《倔強》《I for you》和弦是我為了練習排的<b>簡化進行</b>，不是官方樂譜，也沒有對過原曲錄音。
-    拿到正式譜（或 Cindy 老師給的譜）之後，請在這裡改成正確的，練起來才有意義。
-  </div>
-  <div class="row">
-    <span class="sub">歌曲</span><select id="edSong"></select>
-    <span class="sub">段落</span><select id="edSec"></select>
-    <button class="btn small ghost" id="edAddSec">新增段落</button>
-    <button class="btn small ghost" id="edNewSong">新增歌曲</button>
-  </div>
-  <p class="sub" style="margin-bottom:4px">和弦序列（用空白分開，一個和弦 = 一小節；可用 <span class="mono">|</span> 分小節，會被忽略）</p>
-  <textarea id="edText"></textarea>
-  <div class="row" style="margin-top:8px">
-    <button class="btn small" id="edSave">儲存這個段落</button>
-    <button class="btn small ghost" id="edReset">還原成內建</button>
-    <span class="sub" id="edMsg"></span>
-  </div>
-  <p class="sub" style="margin-top:14px">可用的和弦（不夠的話直接打指法，例如 <span class="mono">Gm=355333</span>，x 代表不彈）：</p>
-  <div id="edChordList" class="row" style="gap:6px"></div>
 </div>
 
 <div id="toast"></div>

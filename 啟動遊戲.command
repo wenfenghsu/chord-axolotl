@@ -6,7 +6,7 @@ PORT=8765
 while lsof -i :$PORT >/dev/null 2>&1; do PORT=$((PORT+1)); done
 echo "和弦蠑螈 啟動中… http://localhost:$PORT"
 echo "（練完把這個視窗關掉就停止）"
-python3 -m http.server $PORT >/dev/null 2>&1 &
+python3 -m http.server "$PORT" --bind 127.0.0.1 >/dev/null 2>&1 &
 SRV=$!
 sleep 1
 open "http://localhost:$PORT/index.html"

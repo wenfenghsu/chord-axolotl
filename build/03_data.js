@@ -9,7 +9,7 @@ const OPEN_MIDI = [40,45,50,55,59,64];          // E2 A2 D3 G3 B3 E4
 
 /* ---------- 和弦指法庫：只寫指法，音名自動算出來 ---------- */
 const SHAPES = {
-  'C':'x32010','Cmaj7':'x32000','Cadd9':'x32033','C7':'x32310',
+  'Cm':'x35543','Gm':'355333','C':'x32010','Cmaj7':'x32000','Cadd9':'x32033','C7':'x32310',
   'D':'xx0232','Dm':'xx0231','D7':'xx0212','Dm7':'xx0211','Dsus4':'xx0233',
   'E':'022100','Em':'022000','E7':'020100','Em7':'020000',
   'F':'133211','Fmaj7':'xx3210','F7':'131211',
@@ -59,7 +59,7 @@ const PATTERNS = [
 ];
 function dirOf(idx){ return idx % 2 === 0 ? '↓' : '↑'; }
 
-/* ---------- 內建歌曲（練習用簡化進行，可在編輯器改） ---------- */
+/* ---------- 固定歌曲目錄；原曲資料在 03_originals.js ---------- */
 const BUILTIN = [
   {
     id:'warm', title:'暖身：四和弦循環', artist:'練手用',
@@ -71,56 +71,11 @@ const BUILTIN = [
       {name:'封閉和弦特訓（F / Bm）', chords:'C F C F G Bm G Bm F Bm F C'}
     ]
   },
-  {
-    id:'jue', title:'倔強', artist:'五月天（練習簡化版）',
-    note:'簡化成 C 調的和弦進行，好按、好換。不是官方譜，拿到正式譜請到編輯器改。',
-    bpm:76,
-    sections:[
-      {name:'主歌', chords:'C G Am Em F C F G'},
-      {name:'副歌', chords:'F G Em Am F G C C'},
-      {name:'全曲（主歌＋副歌）', chords:'C G Am Em F C F G F G Em Am F G C C'}
-    ]
-  },
-  {
-    id:'xwg', title:'笑忘歌', artist:'五月天（練習簡化版）',
-    note:'C 調簡化進行。副歌衝起來的地方右手可以刷重一點。',
-    bpm:84,
-    sections:[
-      {name:'主歌', chords:'C G Am Em F C Dm G'},
-      {name:'副歌', chords:'F G Em Am F G C C'},
-      {name:'全曲（主歌＋副歌）', chords:'C G Am Em F C Dm G F G Em Am F G C C'}
-    ]
-  },
-  {
-    id:'ifu', title:'I for you', artist:'LUNA SEA（練習簡化版）',
-    note:'簡化成 Am/C 調。原曲是慢板，BPM 建議壓在 60–70，右手輕一點。',
-    bpm:64,
-    sections:[
-      {name:'主歌', chords:'Am F C G Am F Dm G'},
-      {name:'副歌', chords:'F G Em Am F G C C'},
-      {name:'全曲（主歌＋副歌）', chords:'Am F C G Am F Dm G F G Em Am F G C C'}
-    ]
-  },
-  {
-    id:'comp', title:'Complicated', artist:'Avril Lavigne（練習簡化版）',
-    note:'原曲是 F 大調，這裡移到 C 調讓左手好按。四個和弦一直循環，很適合練換和弦。',
-    bpm:78,
-    sections:[
-      {name:'主歌', chords:'C G Am F C G Am F'},
-      {name:'副歌', chords:'F C G Am F C G G'},
-      {name:'全曲（主歌＋副歌）', chords:'C G Am F C G Am F F C G Am F C G G'}
-    ]
-  },
-  {
-    id:'gf', title:'Girlfriend', artist:'Avril Lavigne（練習簡化版）',
-    note:'原調 D 大調的四和弦循環（D–A–Bm–G），Bm 是封閉和弦。按不動就先練下面的 C 調版。',
-    bpm:90,
-    sections:[
-      {name:'原調（有 Bm 封閉）', chords:'D A Bm G D A Bm G'},
-      {name:'C 調簡單版', chords:'C G Am F C G Am F'},
-      {name:'原調 全段', chords:'D A Bm G D A Bm G D A Bm G D A G G'}
-    ]
-  }
+  {"id": "jue", "title": "倔強", "artist": "五月天", "note": "原調 A · MP3 同步和弦與節奏提示。", "bpm": 156, "sections": []},
+  {"id": "xwg", "title": "笑忘歌", "artist": "五月天", "note": "原調 G · MP3 同步和弦與節奏提示。", "bpm": 120, "sections": []},
+  {"id": "ifu", "title": "I for You", "artist": "LUNA SEA", "note": "原調 C / Am · MP3 同步和弦與節奏提示。", "bpm": 95, "sections": []},
+  {"id": "comp", "title": "Complicated", "artist": "Avril Lavigne", "note": "原調 F · MP3 同步和弦與節奏提示。", "bpm": 78, "sections": []},
+  {"id": "gf", "title": "Girlfriend", "artist": "Avril Lavigne", "note": "原調 D · MP3 同步和弦與節奏提示。", "bpm": 164, "sections": []}
 ];
 
 /* ---------- 小工具 ---------- */
@@ -133,7 +88,6 @@ function toast(msg, ms=1800){
 function go(id){
   $$('.screen').forEach(s=>s.classList.remove('on'));
   $('#'+id).classList.add('on');
-  if (id === 'scEditor') editorOpen();
   if (id === 'scSelect') renderSongs();
 }
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }

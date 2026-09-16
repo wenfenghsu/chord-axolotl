@@ -2,6 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>和弦蠑螈</title>
 <style>
@@ -139,16 +140,21 @@ textarea{width:100%;height:150px;background:var(--bg3);color:var(--ink);border:1
   padding:10px 20px;border-radius:99px;font-size:14px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
 #toast.on{opacity:1}
 
-#videoPanel:not([hidden]){display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin-top:12px}
-#youtubePlayer{width:480px;max-width:100%;height:270px;border:0;border-radius:12px}
-.video-info{flex:1;min-width:200px} a{color:var(--aqua)}
-#scPlay:has(#videoPanel:not([hidden])) #playMid{min-height:260px}
-#scPlay:has(#videoPanel:not([hidden])) #axo{max-width:180px}
-#scPlay:has(#videoPanel:not([hidden])) .axo-wrap{max-width:200px}
-#originalSettings summary{cursor:pointer;color:var(--aqua);padding:8px 0}
 #resTrans,#resTable{overflow-x:auto} button:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--aqua);outline-offset:4px}
-@media(max-width:600px){.screen{padding:14px}h1{font-size:32px}.card{max-width:100%}#youtubePlayer{width:100%;height:220px}.video-info{min-width:0}#scResult{justify-content:flex-start!important}#scResult .card{min-width:0!important;flex-basis:100%!important}}
+@media(max-width:600px){.screen{padding:14px}h1{font-size:32px}.card{max-width:100%}#scResult{justify-content:flex-start!important}#scResult .card{min-width:0!important;flex-basis:100%!important}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+#rhythmCoach{flex:none;padding:10px 16px;margin:8px 0}
+#rhythmGuide{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-top:8px}
+.rhythm-step{display:flex;align-items:center;justify-content:center;gap:12px;background:var(--bg3);border:2px solid transparent;border-radius:10px;padding:5px;color:var(--dim)}
+.rhythm-step span{font-size:14px;font-weight:800}.rhythm-step b{font-size:27px}.rhythm-step.strum{color:var(--pink)}.rhythm-step.active{border-color:var(--aqua);background:#245054;color:white}
+.barlab{position:absolute;top:6px;transform:translateX(-50%);font-size:14px;font-weight:800;color:var(--warn)}
+#trackPanel:not([hidden]){display:flex;gap:20px;align-items:center;flex-wrap:wrap;flex:none;margin:8px 0}
+#trackPanel .track-info{flex:1;min-width:200px}
+#audioPlayer{width:min(450px,100%)}
+#scPlay:has(#trackPanel:not([hidden])) #playMid{min-height:300px}
+#scPlay:has(#trackPanel:not([hidden])) #lane{min-height:118px;flex-shrink:0}
+@media(max-width:820px){.hud{flex-wrap:wrap}.rhythm-step{flex-direction:column;gap:0}#scPlay:has(#trackPanel:not([hidden])) #playMid{grid-template-columns:80px minmax(150px,1fr) 100px;gap:8px;flex:none}#scPlay .nextbox{display:flex}#curDiagram svg{width:150px;height:191px}#nextDiagram svg{width:90px;height:115px}}
 </style>
 </head>
 <body>

@@ -8,13 +8,17 @@ const G = {
   per:{}, trans:{}, notes:[], running:false, startAt:0, cands:[], timer:0, endAt:0
 };
 
-/* ---------- 歌曲存取（含使用者自訂） ---------- */
+/* ---------- 固定歌曲目錄：舊的自訂譜不覆蓋內建原曲 ---------- */
 function loadSongs(){
-  let saved = null;
-  try{ saved = JSON.parse(localStorage.getItem('axo_songs')||'null'); }catch(e){}
-  G.songs = (saved && Array.isArray(saved) && saved.length) ? saved : JSON.parse(JSON.stringify(BUILTIN));
+  G.songs=JSON.parse(JSON.stringify(BUILTIN));
+  G.songs.forEach(s=>{
+    const original=ORIGINAL_CHARTS[s.id];
+    if(original){
+      const chords=parseOriginalChart(original.text).filter(r=>r.chord!=='REST').slice(0,24).map(r=>r.chord).join(' ');
+      s.sections=[{name:'換和弦慢練（非原曲時間）',chords}];
+    }
+  });
 }
-function saveSongs(){ localStorage.setItem('axo_songs', JSON.stringify(G.songs)); }
 
 function renderSongs(){
   const grid = $('#songGrid'); grid.innerHTML = '';
@@ -23,7 +27,7 @@ function renderSongs(){
     d.className = 'song' + (G.song === s ? ' sel' : '');
     d.innerHTML = `<h3>${escapeHTML(s.title)}</h3><p><b>${escapeHTML(s.artist)}</b><br>${escapeHTML(s.note||'')}</p>
       <p style="margin-top:8px" class="mono" style="font-size:12px">${s.sections.map(x=>escapeHTML(x.name)).join(' · ')}</p>`;
-    d.onclick = ()=>{ clearLocalAudio(); G.song = s; G.secIdx = 0; $('#bpm').value = s.bpm||72; $('#bpmVal').textContent = s.bpm||72; renderSongs(); renderSecPick(); };
+    d.onclick = ()=>{ clearLocalAudio(); $('#sourceMode').value=s.id==='warm'?'practice':'mp3'; G.song = s; G.secIdx = 0; $('#bpm').value = s.bpm||72; $('#bpmVal').textContent = s.bpm||72; renderSongs(); renderSecPick(); };
     d.tabIndex=0; d.setAttribute('role','button'); d.setAttribute('aria-pressed',String(G.song===s));
     d.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();d.click();}};
     grid.appendChild(d);
@@ -51,10 +55,11 @@ function renderSecPick(){
 
 /* ---------- 開始 ---------- */
 async function startGame(){
-  if ($('#sourceMode').value === 'youtube') return startYouTubeGame();
+  if ($('#sourceMode').value === 'mp3') return startMP3Game();
   quitGame();
-  G.youtube = false; G.freePlay = false; G.paused = false; G.extra = 0; G.reasons = {chord:0,timing:0};
-  $('#videoPanel').hidden = true;
+  $('#rhythmCoach').hidden=true;
+  G.original = false; G.freePlay = false; G.paused = false; G.extra = 0; G.reasons = {chord:0,timing:0};
+  $('#trackPanel').hidden = true;
   $('#btnPause').textContent = '暫停';
   if (A.ctx) await A.ctx.resume();
   if (!G.song){ toast('先選一首歌'); return; }
@@ -95,7 +100,7 @@ async function startGame(){
 function quitGame(){
   G.running = false; G.paused = false; A.onOnset = null;
   clearTimeout(G.endTimer);
-  if (typeof Y !== 'undefined' && Y.ready) Y.player.pauseVideo();
+  if (typeof M !== 'undefined' && M.audio) M.audio.pause();
   if (A.ctx && A.ctx.state === 'suspended') A.ctx.resume().catch(()=>{});
   stopMetronome(); clearInterval(G.timer);
 }
@@ -106,13 +111,13 @@ function showChord(){
   $('#curChord').textContent = c === 'REST' ? '休息' : c || '—';
   $('#curDiagram').innerHTML = c && c !== 'REST' ? diagram(c, 1.45) : '';
   const n = G.chords[G.idx+1];
-  $('#nextChord').textContent = n ? n : '最後一個！';
+  $('#nextChord').textContent = n === 'REST' ? '休息' : n || '最後一個！';
   $('#nextDiagram').innerHTML = n && n !== 'REST' ? diagram(n, 0.95) : '';
   $('#progN').textContent = `${Math.min(G.idx+1,G.chords.length)}/${G.chords.length}`;
   if (c && G.running && !G.timed && $('#demoOn') && $('#demoOn').checked)
     padChord(c, A.ctx.currentTime + 0.05, 0.55, 0.08);
   const hints = {easy:'按好之後，右手刷一下', mid:'跟著伴奏刷四下', hard:'照下面的箭頭刷'};
-  $('#curHint').textContent = c === 'REST' ? '這一段先聽，準備下一個和弦' : G.diff === 'easy' && G.timed ? '每小節第一拍刷一下' : hints[G.diff];
+  $('#curHint').textContent = c === 'REST' ? '這一段先聽，準備下一個和弦' : G.diff === 'easy' && G.original ? '換到這個和弦時刷一下' : G.diff === 'easy' && G.timed ? '每小節第一拍刷一下' : hints[G.diff];
 }
 function updHUD(){
   $('#scoreN').textContent = G.score;
@@ -199,7 +204,7 @@ function judgeChordNow(target, winSec){
 /* ================= 簡單模式 ================= */
 G.pending = [];
 function onPlayerStrum(t){
-  if (!G.running || G.paused || (G.youtube && !youtubePlaying())) return;
+  if (!G.running || G.paused || (G.original && !trackPlaying())) return;
   const audioTime = t;
   t = gameTime() - inputLatencySeconds();
   if (G.freePlay){ G.strums++; return; }
@@ -401,7 +406,7 @@ function stopMetronome(){
 }
 
 function tickRhythm(){
-  if (!G.running || G.paused || (G.youtube && !youtubePlaying())) return;
+  if (!G.running || G.paused || (G.original && !trackPlaying())) return;
   drawDetect();
   const now = gameTime();
   const lane = $('#lane'), W = lane.clientWidth;
@@ -418,7 +423,7 @@ function tickRhythm(){
     if (!n.state && dt < -0.22*G.tol){
       n.state = 'miss'; n.el.classList.add('miss');
       G.reasons.timing++; G.total++; G.per[n.chord].no++; G.combo = 0; updHUD();
-      if (n.isFirst) logTransition(n.chordIdx-1, n.chord, false, 'timing');
+      if (n.isFirst) logTransition(n.fromIdx ?? n.chordIdx-1, n.chord, false, 'timing');
       axoReact('sad'); showJudge('沒彈到', 'var(--bad)');
     }
     if (dt < -0.9) n.el.style.display = 'none';
@@ -432,10 +437,10 @@ function tickRhythm(){
 
   // 目前小節 → 更新大和弦圖
   const beat = 60/G.bpm;
-  const ci = G.youtube ? G.chart.findIndex(row=>now >= row.time && now < row.end) : Math.floor((now - G.startAt)/(beat*4)) - G.leadBars;
+  const ci = G.original ? G.chart.findIndex(row=>now >= row.time && now < row.end) : Math.floor((now - G.startAt)/(beat*4)) - G.leadBars;
   if (ci === 0 && G.idx === 0 && $('#curHint').textContent.startsWith('準備')) showChord();
   if (ci >= 0 && ci !== G.idx && ci < G.chords.length){ G.idx = ci; showChord(); }
-  if (ci < 0 && !G.youtube){
+  if (ci < 0 && !G.original){
     const cd = Math.ceil((G.startAt + G.leadBars*4*beat - now)/beat);
     $('#curHint').textContent = `預備… ${cd}`;
   }
@@ -446,7 +451,7 @@ function tickRhythm(){
     const n = p.note;
     const r = judgeChordNow(n.chord, 0.18);
     G.total++;
-    if (n.isFirst) logTransition(n.chordIdx-1, n.chord, r.ok);
+    if (n.isFirst) logTransition(n.fromIdx ?? n.chordIdx-1, n.chord, r.ok);
     const adt = Math.abs(n.dt);
     if (r.ok){
       const perfect = adt < 0.085*G.tol;
@@ -514,7 +519,7 @@ function transTip(from, to){
 }
 function endGame(){
   if (!G.running) return;
-  const played = G.youtube ? Y.player.getCurrentTime() : 0;
+  const played = G.original ? M.audio.currentTime : 0;
   quitGame();
   $('#resSummary').textContent = G.freePlay ? `跟彈到 ${formatTime(played)}，共偵測 ${G.strums} 次刷弦。尚無校對時間譜，這次不評分。` : `已判定 ${G.total} 次 · 和弦不符 ${G.reasons.chord} 次 · 未跟上節拍 ${G.reasons.timing} 次 · 額外刷弦 ${G.extra} 次（另列，不扣分）`;
   if (G.freePlay){

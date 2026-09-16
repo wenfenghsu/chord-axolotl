@@ -1,1 +1,7 @@
 .DS_Store
+
+# Local-only recording analysis; never publish audio or analysis dependencies.
+build/research/
+
+# User-owned local audio stays on this computer, not GitHub.
+音樂 MP3/
