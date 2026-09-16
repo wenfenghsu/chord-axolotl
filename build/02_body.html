@@ -1,0 +1,234 @@
+<!-- ================= 標題 ================= -->
+<div class="screen on" id="scTitle" style="align-items:center;justify-content:center;text-align:center">
+  <div class="axo-wrap" style="width:auto">
+    <img id="axoTitle" src="__AXO__" style="width:280px;filter:drop-shadow(0 14px 22px rgba(0,0,0,.5));animation:idle 2.6s ease-in-out infinite">
+  </div>
+  <h1 style="margin-top:6px">和弦蠑螈</h1>
+  <p class="sub" style="max-width:560px">插上電吉他，陪蠑螈練和弦。<br>
+     牠聽得到你彈的每一下 —— 彈對了牠會跳起來。</p>
+  <div class="row" style="justify-content:center;margin-top:18px">
+    <button class="btn" onclick="go('scSetup')">開始</button>
+    <button class="btn ghost" onclick="go('scEditor')">編輯和弦譜</button>
+  </div>
+  <p class="sub" style="font-size:12px;margin-top:26px">Cindy 專用 · 需要麥克風/音源輸入權限</p>
+</div>
+
+<!-- ================= 設定 / 校準 ================= -->
+<div class="screen" id="scSetup">
+  <div class="row" style="justify-content:space-between">
+    <h2>① 接上吉他，校準聲音</h2>
+    <button class="btn ghost small" onclick="go('scTitle')">← 回首頁</button>
+  </div>
+
+  <div class="card" style="margin-bottom:12px">
+    <div class="row">
+      <button class="btn small" id="btnMic">允許並開始收音</button>
+      <select id="devSel" style="min-width:280px"></select>
+      <span class="tag" id="micState">尚未開始</span>
+    </div>
+    <p class="sub" style="margin:10px 0 0">
+      接法：電吉他 → 音箱 → 音箱的 <b>LINE OUT / PHONES</b> → 電腦的 <b>音源輸入孔或錄音介面</b>。<br>
+      沒有 line out 的話，把電腦麥克風對著音箱也可以，但請把環境放安靜一點。
+    </p>
+  </div>
+
+  <div class="row" style="align-items:stretch;gap:14px;flex:1;min-height:0">
+    <div class="card" style="flex:1;min-width:300px">
+      <h2 style="font-size:19px">② 音量校準</h2>
+      <p class="sub" style="margin-top:0">用力刷一下你最常彈的和弦，讓下面的條走到一半以上。</p>
+      <div id="meter" style="margin:12px 0"><div id="meterBar"></div></div>
+      <div class="row">
+        <span class="sub">靈敏度</span>
+        <input type="range" id="sens" min="1" max="60" value="12" style="flex:1">
+        <span class="mono" id="sensVal" style="width:44px;text-align:right">12</span>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn small aqua" id="btnAutoCal">自動校準（先安靜 2 秒，再刷 3 下）</button>
+      </div>
+      <p class="sub mono" id="calInfo" style="font-size:12px;margin-bottom:0">noise floor: -- · 觸發門檻: --</p>
+    </div>
+
+    <div class="card" style="flex:1;min-width:300px">
+      <h2 style="font-size:19px">③ 測試：彈什麼牠就顯示什麼</h2>
+      <div id="guess">—</div>
+      <div id="guessConf">彈一個和弦看看</div>
+      <div class="chroma" id="chroma"></div>
+      <div class="chromaLbl" id="chromaLbl"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn small ghost" id="btnTuner">調音器</button>
+        <span class="mono" id="tunerOut" style="font-size:18px"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="row" style="justify-content:flex-end;margin-top:12px">
+    <button class="btn" id="btnToSongs" disabled onclick="go('scSelect')">選歌 →</button>
+  </div>
+</div>
+
+<!-- ================= 選歌 ================= -->
+<div class="screen" id="scSelect">
+  <div class="row" style="justify-content:space-between">
+    <h2>選一首歌</h2>
+    <button class="btn ghost small" onclick="go('scSetup')">← 回校準</button>
+  </div>
+  <div class="songgrid" id="songGrid"></div>
+
+  <h2 style="margin-top:18px">選難度</h2>
+  <div class="diff" id="diffRow">
+    <button data-d="easy" class="sel">簡單<small>右手彈一下就好，不限時間</small></button>
+    <button data-d="mid">中等<small>跟著節拍器，每個和弦彈四下</small></button>
+    <button data-d="hard">困難<small>照指定節奏型彈</small></button>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <div class="row">
+      <span class="sub">速度 BPM</span>
+      <input type="range" id="bpm" min="50" max="140" value="72" style="flex:1;max-width:320px">
+      <span class="mono" id="bpmVal" style="width:40px">72</span>
+      <span class="sub" style="margin-left:14px">判定寬容</span>
+      <select id="tol"><option value="1.4">很鬆（初學）</option><option value="1" selected>普通</option><option value="0.7">嚴格</option></select>
+      <label class="sub" style="margin-left:14px"><input type="checkbox" id="clickOn" checked> 節拍器聲音</label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <span class="sub">節奏型（困難模式）</span>
+      <select id="patSel" style="min-width:260px"></select>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:10px">
+    <div class="row">
+      <b style="font-size:15px">伴奏</b>
+      <select id="backMode">
+        <option value="drums+bass">鼓 ＋ Bass</option>
+        <option value="full" selected>鼓 ＋ Bass ＋ 和弦（最像一首歌）</option>
+        <option value="drums">只有鼓</option>
+        <option value="off">不要伴奏</option>
+      </select>
+      <span class="sub">音量</span>
+      <input type="range" id="backVol" min="0" max="100" value="45" style="flex:1;max-width:220px">
+      <label class="sub"><input type="checkbox" id="demoOn"> 換和弦時先示範一次</label>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn small ghost" id="btnBgPick">載入自己的伴奏音檔</button>
+      <input type="file" id="bgFile" accept="audio/*" class="hide">
+      <span class="sub" id="bgName">未載入（用內建伴奏）</span>
+      <span class="sub">從第 <input type="number" id="bgOffset" value="0" step="0.1" style="width:76px"> 秒開始對拍</span>
+      <button class="btn small ghost" id="btnBgClear">清除</button>
+    </div>
+    <p class="sub" style="margin:8px 0 0;font-size:12px">
+      伴奏是從電腦喇叭出來的。吉他走 line out 進電腦時完全不影響判斷；
+      如果你是拿電腦麥克風對著音箱收音，請戴耳機或把伴奏音量關小，不然蠑螈會把伴奏聽成你彈的。
+    </p>
+  </div>
+
+  <div class="row" style="justify-content:flex-end;margin-top:14px">
+    <button class="btn ghost" onclick="go('scEditor')">改和弦譜</button>
+    <button class="btn" id="btnStart">開始練習 ♪</button>
+  </div>
+</div>
+
+<!-- ================= 遊戲 ================= -->
+<div class="screen" id="scPlay">
+  <div class="hud">
+    <div class="row">
+      <button class="btn ghost small" id="btnQuit">結束</button>
+      <b id="playTitle" style="font-size:18px"></b>
+      <span class="tag" id="playDiff"></span>
+      <span class="tag" id="playSec"></span>
+    </div>
+    <div class="row">
+      <div class="stat"><b id="scoreN">0</b><span>分數</span></div>
+      <div class="stat"><b id="comboN">0</b><span>連段</span></div>
+      <div class="stat"><b id="progN">0/0</b><span>進度</span></div>
+    </div>
+  </div>
+
+  <div id="playMid">
+    <div class="axo-wrap">
+      <div class="bubble" id="bubble"></div>
+      <img id="axo" src="__AXO__">
+      <div id="comboBig"></div>
+    </div>
+
+    <div class="chordbox">
+      <div class="chordname" id="curChord">—</div>
+      <div id="curDiagram"></div>
+      <div class="sub" id="curHint" style="text-align:center"></div>
+    </div>
+
+    <div class="chordbox nextbox" style="opacity:.6">
+      <div class="chordname next" id="nextChord">下一個</div>
+      <div id="nextDiagram"></div>
+    </div>
+
+    <div class="card" id="detect">
+      <div class="sub" style="font-size:12px">牠聽到的</div>
+      <div id="guess2">—</div>
+      <div id="guessConf2" style="font-size:11px;color:var(--dim);text-align:center"></div>
+      <div class="chroma" id="chroma2" style="height:56px;margin-top:8px"></div>
+      <div class="chromaLbl" id="chromaLbl2"></div>
+      <div id="meter" style="margin-top:10px"><div id="meterBar2" style="height:100%;width:0%;background:linear-gradient(90deg,var(--ok),var(--warn),var(--bad))"></div></div>
+    </div>
+  </div>
+
+  <div id="lane">
+    <div class="hitzone"></div>
+    <div class="judge" id="judge"></div>
+  </div>
+</div>
+
+<!-- ================= 結算 ================= -->
+<div class="screen" id="scResult" style="align-items:center;justify-content:center;text-align:center">
+  <img id="axoEnd" src="__AXO__" style="width:220px;filter:drop-shadow(0 14px 22px rgba(0,0,0,.5))" class="cheer">
+  <h1 id="resTitle">練完了！</h1>
+  <div class="row" style="justify-content:center;margin:14px 0">
+    <div class="stat"><b id="resScore">0</b><span>分數</span></div>
+    <div class="stat"><b id="resAcc">0%</b><span>正確率</span></div>
+    <div class="stat"><b id="resCombo">0</b><span>最長連段</span></div>
+    <div class="stat"><b id="resStars">☆☆☆</b><span>評價</span></div>
+  </div>
+  <div class="row" style="align-items:flex-start;gap:14px;max-width:1080px;width:100%">
+    <div class="card" style="flex:1.3;min-width:330px;text-align:left">
+      <h2 style="font-size:17px">換和弦：哪幾個會卡 🔑</h2>
+      <div id="resTrans"></div>
+    </div>
+    <div class="card" style="flex:1;min-width:300px;text-align:left">
+      <h2 style="font-size:17px">每個和弦本身</h2>
+      <div id="resTable"></div>
+    </div>
+  </div>
+  <div class="row" style="justify-content:center;margin-top:18px">
+    <button class="btn" id="btnRetry">再來一次</button>
+    <button class="btn ghost" onclick="go('scSelect')">換一首</button>
+  </div>
+</div>
+
+<!-- ================= 和弦譜編輯 ================= -->
+<div class="screen" id="scEditor">
+  <div class="row" style="justify-content:space-between">
+    <h2>編輯和弦譜</h2>
+    <button class="btn ghost small" onclick="go('scSelect')">← 回選歌</button>
+  </div>
+  <div class="note-warn" style="margin-bottom:12px">
+    <b>請先看這裡：</b>內建的《倔強》《I for you》和弦是我為了練習排的<b>簡化進行</b>，不是官方樂譜，也沒有對過原曲錄音。
+    拿到正式譜（或 Cindy 老師給的譜）之後，請在這裡改成正確的，練起來才有意義。
+  </div>
+  <div class="row">
+    <span class="sub">歌曲</span><select id="edSong"></select>
+    <span class="sub">段落</span><select id="edSec"></select>
+    <button class="btn small ghost" id="edAddSec">新增段落</button>
+    <button class="btn small ghost" id="edNewSong">新增歌曲</button>
+  </div>
+  <p class="sub" style="margin-bottom:4px">和弦序列（用空白分開，一個和弦 = 一小節；可用 <span class="mono">|</span> 分小節，會被忽略）</p>
+  <textarea id="edText"></textarea>
+  <div class="row" style="margin-top:8px">
+    <button class="btn small" id="edSave">儲存這個段落</button>
+    <button class="btn small ghost" id="edReset">還原成內建</button>
+    <span class="sub" id="edMsg"></span>
+  </div>
+  <p class="sub" style="margin-top:14px">可用的和弦（不夠的話直接打指法，例如 <span class="mono">Gm=355333</span>，x 代表不彈）：</p>
+  <div id="edChordList" class="row" style="gap:6px"></div>
+</div>
+
+<div id="toast"></div>
