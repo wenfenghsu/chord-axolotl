@@ -69,28 +69,29 @@
 <!-- ================= 選歌 ================= -->
 <div class="screen" id="scSelect">
   <div class="row" style="justify-content:space-between">
-    <h2>選一首歌</h2>
+    <h2>Cindy，今天想練哪一首？</h2>
     <button class="btn ghost small" onclick="go('scSetup')">← 回校準</button>
   </div>
   <div class="songgrid" id="songGrid"></div>
 
   <h2 style="margin-top:18px">選難度</h2>
   <div class="diff" id="diffRow">
-    <button data-d="easy" class="sel">簡單<small>右手彈一下就好，不限時間</small></button>
-    <button data-d="mid">中等<small>跟著節拍器，每個和弦彈四下</small></button>
+    <button data-d="easy" class="sel">簡單<small>每小節彈一下／自由慢練</small></button>
+    <button data-d="mid">中等<small>跟著歌曲，每小節彈四下</small></button>
     <button data-d="hard">困難<small>照指定節奏型彈</small></button>
   </div>
 
   <div class="card" style="margin-top:14px">
     <div class="row">
       <span class="sub">速度 BPM</span>
-      <input type="range" id="bpm" min="50" max="140" value="72" style="flex:1;max-width:320px">
+      <input type="range" id="bpm" min="40" max="220" value="72" style="flex:1;max-width:320px">
       <span class="mono" id="bpmVal" style="width:40px">72</span>
       <span class="sub" style="margin-left:14px">判定寬容</span>
       <select id="tol"><option value="1.4">很鬆（初學）</option><option value="1" selected>普通</option><option value="0.7">嚴格</option></select>
       <label class="sub" style="margin-left:14px"><input type="checkbox" id="clickOn" checked> 節拍器聲音</label>
     </div>
     <div class="row" style="margin-top:10px">
+      <label class="sub"><input id="waitMode" type="checkbox"> 簡單慢練：彈對才前進（僅合成伴奏）</label>
       <span class="sub">節奏型（困難模式）</span>
       <select id="patSel" style="min-width:260px"></select>
     </div>
@@ -98,7 +99,9 @@
 
   <div class="card" style="margin-top:10px">
     <div class="row">
-      <b style="font-size:15px">伴奏</b>
+      <b style="font-size:15px">播放來源</b>
+      <select id="sourceMode"><option value="youtube">官方 YouTube 原曲</option><option value="practice">合成伴奏／本機音檔</option></select>
+      <span class="sub">練習伴奏</span>
       <select id="backMode">
         <option value="drums+bass">鼓 ＋ Bass</option>
         <option value="full" selected>鼓 ＋ Bass ＋ 和弦（最像一首歌）</option>
@@ -122,6 +125,17 @@
     </p>
   </div>
 
+  <div class="card" id="originalSettings" style="margin-top:12px">
+    <h2 style="font-size:19px">跟原唱一起練</h2>
+    <p class="sub" id="originalInfo">選一首歌即可播放官方 MV。</p>
+    <p class="sub">戴耳機聽原曲，輸入裝置只收吉他。未校對的簡化譜不拿來判原曲對錯；可先自由跟彈，或加入已校對的時間譜。</p>
+    <details><summary>設定原曲時間譜與輸入延遲</summary>
+      <p class="sub">每行是一小節：「影片秒數 和弦」，最後一行「秒數 END」。例如 12.5 C、15.5 G、18.5 END（請換成這支 MV 的正確譜）。每小節 4 拍；不彈的段落可用 REST。儲存後三種難度都能跟影片評分。</p>
+      <textarea id="originalChart" aria-label="原曲時間譜" placeholder="每行：影片秒數 和弦；最後一行：影片秒數 END" style="min-height:150px"></textarea>
+      <div class="row"><button class="btn small" id="saveOriginalChart">儲存已校對的時間譜</button><button class="btn small ghost" id="clearOriginalChart">移除時間譜</button><span id="chartStatus" class="sub" role="status"></span></div>
+      <p class="sub"><label>輸入延遲補償 <input id="inputLatency" type="number" min="0" max="500" step="10" value="0" style="width:85px"> 毫秒</label>（吉他收音比實際刷弦晚多久；不確定先用 0）</p>
+    </details>
+  </div>
   <div class="row" style="justify-content:flex-end;margin-top:14px">
     <button class="btn ghost" onclick="go('scEditor')">改和弦譜</button>
     <button class="btn" id="btnStart">開始練習 ♪</button>
@@ -132,7 +146,7 @@
 <div class="screen" id="scPlay">
   <div class="hud">
     <div class="row">
-      <button class="btn ghost small" id="btnQuit">結束</button>
+      <button class="btn ghost small" id="btnQuit">結算</button><button class="btn ghost small" id="btnPause">暫停</button>
       <b id="playTitle" style="font-size:18px"></b>
       <span class="tag" id="playDiff"></span>
       <span class="tag" id="playSec"></span>
@@ -144,6 +158,10 @@
     </div>
   </div>
 
+  <div id="videoPanel" class="card" hidden>
+    <div id="youtubePlayer"></div>
+    <div class="video-info"><b id="videoTitle"></b><p id="videoStatus" role="status" class="sub">載入播放器…</p><a id="videoLink" target="_blank" rel="noopener noreferrer">在 YouTube 開啟官方影片 ↗</a><p class="sub">影片若無法自動播放，請點播放器的播放鍵。</p><label class="sub">原曲音量 <input id="youtubeVolume" type="range" min="0" max="100" value="45"></label></div>
+  </div>
   <div id="playMid">
     <div class="axo-wrap">
       <div class="bubble" id="bubble"></div>
@@ -181,7 +199,7 @@
 <!-- ================= 結算 ================= -->
 <div class="screen" id="scResult" style="align-items:center;justify-content:center;text-align:center">
   <img id="axoEnd" src="__AXO__" style="width:220px;filter:drop-shadow(0 14px 22px rgba(0,0,0,.5))" class="cheer">
-  <h1 id="resTitle">練完了！</h1>
+  <h1 id="resTitle">練完了！</h1><p id="resSummary" class="sub"></p>
   <div class="row" style="justify-content:center;margin:14px 0">
     <div class="stat"><b id="resScore">0</b><span>分數</span></div>
     <div class="stat"><b id="resAcc">0%</b><span>正確率</span></div>

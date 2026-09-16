@@ -219,12 +219,16 @@ async function listDevices(){
 }
 
 async function initAudio(deviceId){
-  if (A.stream) A.stream.getTracks().forEach(t=>t.stop());
   const constraints = {audio:{
     echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1
   }};
   if (deviceId) constraints.audio.deviceId = {exact:deviceId};
-  A.stream = await navigator.mediaDevices.getUserMedia(constraints);
+  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  if (A.stream) A.stream.getTracks().forEach(t=>t.stop());
+  if (A.src) A.src.disconnect();
+  if (A.filters) A.filters.forEach(node=>node.disconnect());
+  A.stream = stream;
+  A.lastOnset=0; _fluxHist=[];
   if (!A.ctx) A.ctx = new (window.AudioContext||window.webkitAudioContext)();
   await A.ctx.resume();
   A.sr = A.ctx.sampleRate;
@@ -232,6 +236,7 @@ async function initAudio(deviceId){
   A.src = A.ctx.createMediaStreamSource(A.stream);
   const hp = A.ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=65; hp.Q.value=0.7;
   const lp = A.ctx.createBiquadFilter(); lp.type='lowpass';  lp.frequency.value=4000;
+  A.filters=[hp,lp];
 
   A.big = A.ctx.createAnalyser();   A.big.fftSize = 16384; A.big.smoothingTimeConstant = 0;
   A.small = A.ctx.createAnalyser(); A.small.fftSize = 2048; A.small.smoothingTimeConstant = 0;
@@ -462,12 +467,15 @@ function renderSongs(){
   G.songs.forEach((s,i)=>{
     const d = document.createElement('div');
     d.className = 'song' + (G.song === s ? ' sel' : '');
-    d.innerHTML = `<h3>${s.title}</h3><p><b>${s.artist}</b><br>${s.note||''}</p>
-      <p class="mono" style="margin-top:8px;font-size:12px">${s.sections.map(x=>x.name).join(' · ')}</p>`;
-    d.onclick = ()=>{ G.song = s; G.secIdx = 0; $('#bpm').value = s.bpm||72; $('#bpmVal').textContent = s.bpm||72; renderSongs(); renderSecPick(); };
+    d.innerHTML = `<h3>${escapeHTML(s.title)}</h3><p><b>${escapeHTML(s.artist)}</b><br>${escapeHTML(s.note||'')}</p>
+      <p class="mono" style="margin-top:8px;font-size:12px">${s.sections.map(x=>escapeHTML(x.name)).join(' · ')}</p>`;
+    d.onclick = ()=>{ clearLocalAudio(); G.song = s; G.secIdx = 0; $('#bpm').value = s.bpm||72; $('#bpmVal').textContent = s.bpm||72; renderSongs(); renderSecPick(); };
+    d.tabIndex=0; d.setAttribute('role','button'); d.setAttribute('aria-pressed',String(G.song===s));
+    d.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();d.click();}};
     grid.appendChild(d);
   });
   renderSecPick();
+  refreshOriginalSettings();
 }
 function renderSecPick(){
   let box = $('#secPick');
@@ -488,14 +496,23 @@ function renderSecPick(){
 }
 
 /* ---------- 開始 ---------- */
-function startGame(){
+async function startGame(){
+  if ($('#sourceMode').value === 'youtube') return startYouTubeGame();
+  quitGame();
+  G.youtube = false; G.freePlay = false; G.paused = false; G.extra = 0; G.reasons = {chord:0,timing:0};
+  $('#videoPanel').hidden = true;
+  $('#btnPause').textContent = '暫停';
+  if (A.ctx) await A.ctx.resume();
   if (!G.song){ toast('先選一首歌'); return; }
   if (!A.running){ toast('還沒開始收音，先回校準頁'); return; }
   const sec = G.song.sections[G.secIdx];
   G.chords = fmtChords(sec.chords);
+  if (!G.chords.length){ toast('和弦譜是空的，請先加入和弦'); return; }
   const bad = G.chords.filter(c=>!chordInfo(c));
   if (bad.length){ toast('這些和弦沒有指法：' + [...new Set(bad)].join(' ')); return; }
 
+  G.timed = G.diff !== 'easy' || !!G.bgBuffer || !$('#waitMode').checked;
+  if (G.bgBuffer && (!(+$('#bgOffset').value >= 0) || +$('#bgOffset').value >= G.bgBuffer.duration)){ toast('音檔起點必須在音檔長度內'); return; }
   G.bpm = +$('#bpm').value; G.tol = +$('#tol').value;
   G.pattern = PATTERNS.find(p=>p.id === $('#patSel').value) || PATTERNS[0];
   G.idx = 0; G.score = 0; G.combo = 0; G.maxCombo = 0; G.hit = 0; G.total = 0;
@@ -505,15 +522,15 @@ function startGame(){
 
   $('#playTitle').textContent = `${G.song.title} — ${sec.name}`;
   $('#playDiff').textContent = {easy:'簡單',mid:'中等',hard:'困難'}[G.diff];
-  $('#playSec').textContent = G.diff === 'easy' ? '不限時間' : `${G.bpm} BPM`;
-  $('#lane').style.display = G.diff === 'easy' ? 'none' : 'block';
+  $('#playSec').textContent = !G.timed ? '不限時間' : `${G.bpm} BPM`;
+  $('#lane').style.display = !G.timed ? 'none' : 'block';
   go('scPlay');
   say('準備好了嗎～', 1400);
-  showChord();
+  showChord(); updHUD();
 
   A.onOnset = onPlayerStrum;
   clearInterval(G.timer);
-  if (G.diff === 'easy'){
+  if (!G.timed){
     G.timer = setInterval(tickEasy, 16);
   } else {
     buildNotes();
@@ -522,23 +539,26 @@ function startGame(){
   }
 }
 function quitGame(){
-  G.running = false; A.onOnset = null;
+  G.running = false; G.paused = false; A.onOnset = null;
+  clearTimeout(G.endTimer);
+  if (typeof Y !== 'undefined' && Y.ready) Y.player.pauseVideo();
+  if (A.ctx && A.ctx.state === 'suspended') A.ctx.resume().catch(()=>{});
   stopMetronome(); clearInterval(G.timer);
 }
 
 /* ---------- 畫面：目前和弦 ---------- */
 function showChord(){
   const c = G.chords[G.idx];
-  $('#curChord').textContent = c || '—';
-  $('#curDiagram').innerHTML = c ? diagram(c, 1.45) : '';
+  $('#curChord').textContent = c === 'REST' ? '休息' : c || '—';
+  $('#curDiagram').innerHTML = c && c !== 'REST' ? diagram(c, 1.45) : '';
   const n = G.chords[G.idx+1];
   $('#nextChord').textContent = n ? n : '最後一個！';
-  $('#nextDiagram').innerHTML = n ? diagram(n, 0.95) : '';
+  $('#nextDiagram').innerHTML = n && n !== 'REST' ? diagram(n, 0.95) : '';
   $('#progN').textContent = `${Math.min(G.idx+1,G.chords.length)}/${G.chords.length}`;
-  if (c && G.running && G.diff === 'easy' && $('#demoOn') && $('#demoOn').checked)
+  if (c && G.running && !G.timed && $('#demoOn') && $('#demoOn').checked)
     padChord(c, A.ctx.currentTime + 0.05, 0.55, 0.08);
   const hints = {easy:'按好之後，右手刷一下', mid:'跟著伴奏刷四下', hard:'照下面的箭頭刷'};
-  $('#curHint').textContent = hints[G.diff];
+  $('#curHint').textContent = c === 'REST' ? '這一段先聽，準備下一個和弦' : G.diff === 'easy' && G.timed ? '每小節第一拍刷一下' : hints[G.diff];
 }
 function updHUD(){
   $('#scoreN').textContent = G.score;
@@ -592,13 +612,14 @@ function clickAt(t, strong){
 }
 
 /* ---------- 記錄換和弦的成敗：真正卡人的往往不是和弦本身，是「換過去」 ---------- */
-function logTransition(fromIdx, toChord, ok){
+function logTransition(fromIdx, toChord, ok, reason = 'chord'){
   if (fromIdx < 0) return;
   const from = G.chords[fromIdx];
-  if (!from || from === toChord) return;          // 同一個和弦不算換
+  if (!from || from === 'REST' || toChord === 'REST' || from === toChord) return;          // 同一個和弦不算換
   const key = from + ' → ' + toChord;
-  if (!G.trans[key]) G.trans[key] = {ok:0, no:0, from, to:toChord};
+  if (!G.trans[key]) G.trans[key] = {ok:0, no:0, chord:0, timing:0, from, to:toChord};
   G.trans[key][ok ? 'ok' : 'no']++;
+  if (!ok) G.trans[key][reason]++;
 }
 /* 兩個和弦之間可以不用放開的手指 */
 function commonHold(a, b){
@@ -617,16 +638,19 @@ function judgeChordNow(target, winSec){
   const top = rank[0];
   const me = rank.find(r=>r.name === target) || {name:target, score:0};
   const slack = 0.04*G.tol;
-  const ok = (top.name === target) || (me.score >= top.score - slack && me.score > 0.68);
+  const ok = A.rms > A.rmsGate*0.5 && me.score > 0.68 && ((top.name === target) || me.score >= top.score - slack);
   return {ok, top, me, chroma};
 }
 
 /* ================= 簡單模式 ================= */
 G.pending = [];
 function onPlayerStrum(t){
-  if (!G.running) return;
-  if (G.diff === 'easy'){
-    G.pending.push({at:t + 0.20, target:G.chords[G.idx], idx:G.idx});
+  if (!G.running || G.paused || (G.youtube && !youtubePlaying())) return;
+  const audioTime = t;
+  t = gameTime() - inputLatencySeconds();
+  if (G.freePlay){ G.strums++; return; }
+  if (!G.timed){
+    G.pending.push({at:audioTime + 0.20, target:G.chords[G.idx], idx:G.idx});
   } else {
     // 找最接近的音符
     const win = 0.22*G.tol;
@@ -638,14 +662,15 @@ function onPlayerStrum(t){
     }
     if (best && bd <= win){
       best.state = 'pending'; best.dt = t - best.t;
-      G.pending.push({at:t + 0.17, note:best});
+      G.pending.push({at:audioTime + 0.17, note:best});
     } else {
+      G.extra++;
       showJudge('多彈了', 'var(--dim)');
     }
   }
 }
 function tickEasy(){
-  if (!G.running) return;
+  if (!G.running || G.paused) return;
   drawDetect();
   const now = A.ctx.currentTime;
   while (G.pending.length && G.pending[0].at <= now){
@@ -662,10 +687,10 @@ function tickEasy(){
       say(CHEER[(Math.random()*CHEER.length)|0]);
       showJudge('對了！','var(--ok)');
       G.idx++;
-      if (G.idx >= G.chords.length){ setTimeout(endGame, 700); return; }
+      if (G.idx >= G.chords.length){ G.endTimer = setTimeout(()=>{ if (G.running) endGame(); }, 700); return; }
       showChord();
     } else {
-      G.per[p.target].no++;
+      G.reasons.chord++; G.per[p.target].no++;
       G.combo = 0;
       axoReact('sad'); blip(160,0.16,'sawtooth',0.10);
       say(OOPS[(Math.random()*OOPS.length)|0], 1600);
@@ -682,7 +707,7 @@ function showJudge(txt, color){
 /* ================= 中等 / 困難：跟著拍子 ================= */
 function buildNotes(){
   const beat = 60/G.bpm;
-  const pat = G.diff === 'mid' ? [1,0,1,0,1,0,1,0] : G.pattern.hits;
+  const pat = G.diff === 'easy' ? [1,0,0,0,0,0,0,0] : G.diff === 'mid' ? [1,0,1,0,1,0,1,0] : G.pattern.hits;
   const firstSlot = pat.findIndex(x=>x);
   G.startAt = A.ctx.currentTime + 1.0;
   G.leadBars = 2;
@@ -708,7 +733,7 @@ function buildNotes(){
     G.barLabels = G.barLabels || [];
     G.barLabels.push({t:t0, el:lab});
   });
-  G.endAt = G.notes[G.notes.length-1].t + 1.6;
+  G.endAt = G.startAt + (G.leadBars + G.chords.length)*4*beat + 0.3;
   G.total = 0;
 }
 /* ---------- 伴奏樂器 ---------- */
@@ -790,11 +815,12 @@ function startMetronome(){
     s.connect(g); g.connect(A.ctx.destination);
     const at = G.startAt + G.leadBars*4*beat;
     s.start(at, Math.max(0, +$('#bgOffset').value));
-    G.bgSource = s;
+    G.bgSource = s; G.bgGain = g;
+    s.onended = ()=>{ if (G.running && G.bgSource === s) endGame(); };
   }
 
   metroId = setInterval(()=>{
-    if (!A.ctx) return;
+    if (!A.ctx || G.paused) return;
     const ahead = A.ctx.currentTime + 0.25;
     while (metroNext < ahead){
       const b = metroBeat, inBar = b % 4, bar = Math.floor(b/4);
@@ -821,9 +847,9 @@ function stopMetronome(){
 }
 
 function tickRhythm(){
-  if (!G.running) return;
+  if (!G.running || G.paused || (G.youtube && !youtubePlaying())) return;
   drawDetect();
-  const now = A.ctx.currentTime;
+  const now = gameTime();
   const lane = $('#lane'), W = lane.clientWidth;
   const hitX = W*0.14;
   const look = (60/G.bpm)*4*2;                 // 畫面上看得到兩小節
@@ -832,15 +858,16 @@ function tickRhythm(){
   // 音符位置
   for (const n of G.notes){
     const dt = n.t - now;
-    if (dt > look || dt < -0.9){ n.el.style.display = 'none'; continue; }
+    if (dt > look){ n.el.style.display = 'none'; continue; }
     n.el.style.display = 'block';
     n.el.style.left = (hitX + dt*pps) + 'px';
     if (!n.state && dt < -0.22*G.tol){
       n.state = 'miss'; n.el.classList.add('miss');
-      G.total++; G.per[n.chord].no++; G.combo = 0; updHUD();
-      if (n.isFirst) logTransition(n.chordIdx-1, n.chord, false);
+      G.reasons.timing++; G.total++; G.per[n.chord].no++; G.combo = 0; updHUD();
+      if (n.isFirst) logTransition(n.chordIdx-1, n.chord, false, 'timing');
       axoReact('sad'); showJudge('沒彈到', 'var(--bad)');
     }
+    if (dt < -0.9) n.el.style.display = 'none';
   }
   for (const b of (G.barLabels||[])){
     const dt = b.t - now;
@@ -851,15 +878,16 @@ function tickRhythm(){
 
   // 目前小節 → 更新大和弦圖
   const beat = 60/G.bpm;
-  const ci = Math.floor((now - G.startAt)/(beat*4)) - G.leadBars;
+  const ci = G.youtube ? G.chart.findIndex(row=>now >= row.time && now < row.end) : Math.floor((now - G.startAt)/(beat*4)) - G.leadBars;
+  if (ci === 0 && G.idx === 0 && $('#curHint').textContent.startsWith('準備')) showChord();
   if (ci >= 0 && ci !== G.idx && ci < G.chords.length){ G.idx = ci; showChord(); }
-  if (ci < 0){
+  if (ci < 0 && !G.youtube){
     const cd = Math.ceil((G.startAt + G.leadBars*4*beat - now)/beat);
     $('#curHint').textContent = `預備… ${cd}`;
   }
 
   // 延遲判定
-  while (G.pending.length && G.pending[0].at <= now){
+  while (G.pending.length && G.pending[0].at <= A.ctx.currentTime){
     const p = G.pending.shift();
     const n = p.note;
     const r = judgeChordNow(n.chord, 0.18);
@@ -876,7 +904,7 @@ function tickRhythm(){
       if (perfect) fx('⭐'); else fx('♪');
       if (G.combo % 4 === 0){ axoReact('happy'); say(CHEER[(Math.random()*CHEER.length)|0], 900); }
     } else {
-      G.per[n.chord].no++; G.combo = 0;
+      G.reasons.chord++; G.per[n.chord].no++; G.combo = 0;
       n.state = 'miss'; n.el.classList.add('miss');
       showJudge(`和弦像 ${r.top.name}`, 'var(--bad)');
       axoReact('sad');
@@ -901,8 +929,9 @@ function drawDetect(){
     $('#guess2').textContent = rank[0].name;
     $('#guess2').style.cssText = 'font-size:26px;font-weight:900;text-align:center;color:' +
       (G.running && rank[0].name === G.chords[G.idx] ? 'var(--ok)' : 'var(--ink)');
-    $('#guessConf2').textContent = `把握度 ${(rank[0].score*100).toFixed(0)}%`;
+    $('#guessConf2').textContent = `音型相似度 ${clamp(rank[0].score*100,0,100).toFixed(0)}%`;
   }
+  if(A.rms <= A.rmsGate*0.7){ $('#guess2').textContent='—'; $('#guessConf2').textContent='等待吉他聲音'; }
   const mb = $('#meterBar2'); if (mb) mb.style.width = clamp(A.rms*900,0,100) + '%';
 }
 function drawChroma(sel, ch){
@@ -924,13 +953,22 @@ function transTip(from, to){
   if (barreFret(shapeOf(to)||[]))
     return `${to} 是封閉和弦：食指先橫按到位，其他手指再一起落下`;
   if (hold.length)
-    return `${hold.map(h=>`第${h.str}弦第${h.fret}格`).join('、')}不用放開，當支點轉過去`;
+    return `${hold.map(h=>`第${h.str}弦第${h.fret}格`).join('、')}位置相同，可試著保留作支點（依實際指法調整）`;
   if (barreFret(shapeOf(from)||[]))
     return `從 ${from} 放開時容易慢半拍，提早一點放`;
   return '先不出聲換十次，手指記住位置再配拍子';
 }
 function endGame(){
+  if (!G.running) return;
+  const played = G.youtube ? Y.player.getCurrentTime() : 0;
   quitGame();
+  $('#resSummary').textContent = G.freePlay ? `跟彈到 ${formatTime(played)}，共偵測 ${G.strums} 次刷弦。尚無校對時間譜，這次不評分。` : `已判定 ${G.total} 次 · 和弦不符 ${G.reasons.chord} 次 · 未跟上節拍 ${G.reasons.timing} 次 · 額外刷弦 ${G.extra} 次（另列，不扣分）`;
+  if (G.freePlay){
+    $('#resTitle').textContent = '今天也有好好練琴！';
+    ['resScore','resAcc','resCombo','resStars'].forEach(id=>$('#'+id).textContent='—');
+    $('#resTrans').textContent = '加入已校對的原曲時間譜後，這裡會分析換和弦的成功率。';
+    $('#resTable').textContent = '自由跟彈不判對錯。'; go('scResult'); return;
+  }
   const acc = G.total ? Math.round(G.hit/G.total*100) : 0;
   $('#resScore').textContent = G.score;
   $('#resAcc').textContent = acc + '%';
@@ -952,12 +990,12 @@ function endGame(){
     const head = worst.length
       ? `<p class="sub" style="margin-top:0">這幾個換法最容易掉拍，下次先單獨練它們：</p>`
       : `<p class="sub" style="margin-top:0">每個換和弦都接得起來，很穩。</p>`;
-    $('#resTrans').innerHTML = head + '<table><tr><th>換法</th><th>成功</th><th>失敗</th><th>接得順嗎</th><th>怎麼練</th></tr>' +
+    $('#resTrans').innerHTML = head + '<table><tr><th>換法</th><th>成功</th><th>失敗</th><th>和弦錯／漏拍</th><th>接得順嗎</th><th>怎麼練</th></tr>' +
       tr.slice(0,8).map(x=>{
         const pct = Math.round(x.rate*100);
         const col = pct >= 85 ? 'var(--ok)' : pct >= 55 ? 'var(--warn)' : 'var(--bad)';
         return `<tr><td><b>${x.k}</b></td><td>${x.ok}</td><td>${x.no}</td>` +
-               `<td style="color:${col};font-weight:700">${pct}%</td><td>${transTip(x.from, x.to)}</td></tr>`;
+               `<td>${x.chord||0}／${x.timing||0}</td><td style="color:${col};font-weight:700">${pct}%</td><td>${transTip(x.from, x.to)}</td></tr>`;
       }).join('') + '</table>';
   }
 
@@ -971,6 +1009,188 @@ function endGame(){
     }).join('') + '</table>';
   go('scResult');
 }
+/* 官方播放器只提供播放與時間軸；吉他分析始終只讀麥克風輸入。 */
+const OFFICIAL = {
+  jue:{id:'R2s-H_crYkc',channel:'滾石唱片 ROCK RECORDS'},
+  xwg:{id:'f6qn6C_sU-4',channel:'相信音樂 BinMusic'},
+  ifu:{id:'MehNUIRekX4',channel:'LUNA SEA'},
+  comp:{id:'5NPBIwQyPWE',channel:'Avril Lavigne'},
+  gf:{id:'Bg59q4puhmg',channel:'Avril Lavigne'}
+};
+const Y = {player:null,ready:false,promise:null,lastTime:null,lastWall:null,timer:0};
+function escapeHTML(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function formatTime(s){ s=Math.max(0,Math.floor(s||0)); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }
+function inputLatencySeconds(){ return clamp(Number($('#inputLatency').value)||0,0,500)/1000; }
+function gameTime(){ return G.youtube && Y.ready ? Y.player.getCurrentTime() : A.ctx.currentTime; }
+function youtubePlaying(){ return Y.ready && Y.player.getPlayerState() === 1; }
+function clearLocalAudio(){
+  G.bgBuffer=null; $('#bgFile').value=''; $('#bgName').textContent='未載入（用內建伴奏）'; $('#bgOffset').value=0;
+}
+function chartKey(){ return 'axo_original_'+G.song.id+'_'+OFFICIAL[G.song.id].id; }
+function readOriginalChart(){ try{return localStorage.getItem(chartKey())||'';}catch{return '';} }
+function refreshOriginalSettings(){
+  const original = $('#sourceMode').value==='youtube';
+  $('#originalSettings').hidden=!original;
+  const video=G.song && OFFICIAL[G.song.id];
+  $('#originalInfo').textContent = video ? `${G.song.title} · ${video.channel} 官方 MV · ${readOriginalChart() ? '使用你儲存的時間譜評分' : '自由跟彈（未校對時間譜）'}` : '暖身與自訂歌曲請選合成伴奏／本機音檔；其餘五首可播放官方 MV。';
+  $('#originalChart').value=video ? readOriginalChart() : '';
+  $('#chartStatus').textContent='';
+  $('#btnStart').textContent=original ? (video && readOriginalChart() ? '跟原曲評分 ♪' : '播放原曲・自由跟彈 ♪') : '開始練習 ♪';
+  ['backMode','bgOffset','btnBgPick','btnBgClear','demoOn','bpm','clickOn','waitMode'].forEach(id=>$('#'+id).disabled=original);
+  $('#saveOriginalChart').disabled=!video; $('#clearOriginalChart').disabled=!video;
+}
+function parseOriginalChart(raw){
+  const lines=raw.trim().split(/\n/).map(x=>x.trim()).filter(Boolean);
+  if(lines.length<2) throw Error('至少要有一個小節，以及最後的 END 時間。');
+  const rows=lines.map((line,i)=>{
+    const parts=line.split(/\s+/);
+    if(parts.length!==2 || !/^\d+(\.\d+)?$/.test(parts[0])) throw Error(`第 ${i+1} 行請填「秒數 和弦」。`);
+    const time=Number(parts[0]), chord=parts[1];
+    if(!Number.isFinite(time)||time<0||time>86400) throw Error(`第 ${i+1} 行時間不正確。`);
+    if(chord!=='END' && chord!=='REST' && !chordInfo(chord)) throw Error(`第 ${i+1} 行的和弦 ${chord} 尚未定義指法。`);
+    return {time,chord};
+  });
+  if(rows.at(-1).chord!=='END') throw Error('最後一行請用「秒數 END」標記練習終點。');
+  rows.forEach((r,i)=>{
+    if(i && r.time<=rows[i-1].time) throw Error('秒數必須依序增加，不能重複。');
+    if(i<rows.length-1 && r.chord==='END') throw Error('END 只能放在最後一行。');
+    if(i<rows.length-1 && rows[i+1].time-r.time<0.4) throw Error('每小節至少 0.4 秒，請確認時間。');
+  });
+  const chart=rows.slice(0,-1).map((r,i)=>({...r,end:rows[i+1].time}));
+  if(!chart.some(r=>r.chord!=='REST')) throw Error('時間譜至少要有一個和弦。');
+  if(chart.length>1500) throw Error('最多支援 1500 小節。');
+  return chart;
+}
+function loadYouTube(){
+  if(Y.ready) return Promise.resolve();
+  if(Y.promise) return Y.promise;
+  Y.promise=new Promise((resolve,reject)=>{
+    let done=false;
+    const fail=()=>{if(done)return;done=true;Y.promise=null;if(Y.player){Y.player.destroy();Y.player=null;}reject(Error('YouTube 載入逾時，請檢查網路或使用官方影片連結。'));};
+    const timeout=setTimeout(fail,18000);
+    const create=()=>{
+      if(done)return;
+      if(!document.getElementById('youtubePlayer')){const el=document.createElement('div');el.id='youtubePlayer';$('#videoPanel').prepend(el);}
+      Y.player=new YT.Player('youtubePlayer',{
+        width:480,height:270,host:'https://www.youtube.com',
+        playerVars:{playsinline:1,origin:location.origin,rel:0},
+        events:{onReady:()=>{if(done)return;done=true;clearTimeout(timeout);Y.ready=true;resolve();},
+          onStateChange:youtubeState,
+          onError:e=>{ $('#videoStatus').textContent=`影片無法嵌入播放（${e.data}）。可點官方連結觀看，或改用本機音檔。`; if(G.running && G.youtube) {G.paused=true;$('#btnPause').textContent='重試播放';}},
+          onAutoplayBlocked:()=>{$('#videoStatus').textContent='請點影片中央的播放鍵開始。';}}
+      });
+    };
+    if(window.YT && YT.Player) create();
+    else {
+      window.onYouTubeIframeAPIReady=create;
+      let script=document.getElementById('youtubeApi');
+      if(!script){script=document.createElement('script');script.id='youtubeApi';script.src='https://www.youtube.com/iframe_api';document.head.appendChild(script);}
+      script.onerror=()=>{clearTimeout(timeout);script.remove();fail();};
+    }
+  });
+  return Y.promise;
+}
+function youtubeState(e){
+  if(!G.youtube || !G.running)return;
+  const playing=e.data===1;
+  G.paused=!playing;
+  $('#btnPause').textContent=playing?'暫停':'繼續';
+  $('#videoStatus').textContent=({1:'原曲播放中 · 戴耳機練習',2:'已暫停 · 評分也暫停',3:'影片緩衝中 · 評分暫停',5:'請點影片播放鍵',0:'播放結束'})[e.data]||'等待 YouTube 播放…';
+  if(!playing){
+    G.pending.forEach(p=>{if(p.note && p.note.state==='pending')p.note.state=null;});
+    G.pending=[];
+  }
+  if(e.data===0) endGame();
+}
+async function startYouTubeGame(){
+  if(!G.song || !OFFICIAL[G.song.id]){toast('請選五首原曲之一，或切換到合成伴奏練暖身。');return;}
+  if(!A.running){toast('先回校準頁開始吉他收音。');return;}
+  let chart=[];
+  try{ const raw=readOriginalChart();if(raw)chart=parseOriginalChart(raw); }catch(e){toast(e.message,4000);return;}
+  quitGame();
+  G.youtube=true; G.freePlay=!chart.length; G.timed=true; G.chart=chart;
+  G.paused=true; G.strums=0; G.extra=0; G.reasons={chord:0,timing:0};
+  G.idx=0; G.score=0; G.combo=0; G.maxCombo=0; G.hit=0; G.total=0;
+  G.per={}; G.trans={}; G.notes=[]; G.pending=[]; G.barLabels=[];
+  G.tol=+$('#tol').value; G.bpm=+$('#bpm').value;
+  G.pattern=PATTERNS.find(p=>p.id===$('#patSel').value)||PATTERNS[0];
+  G.chords=chart.map(r=>r.chord); G.cands=[...new Set([...G.chords.filter(c=>c!=='REST'),...COMMON])];
+  G.chords.forEach(c=>G.per[c]={ok:0,no:0});
+  $('#playTitle').textContent=G.song.title+' · 官方原曲';
+  $('#playDiff').textContent=G.freePlay?'自由跟彈':{easy:'簡單・每小節一下',mid:'中等・每小節四下',hard:'困難・指定節奏'}[G.diff];
+  $('#playSec').textContent=G.freePlay?'尚無時間譜・不評分':'自訂時間譜';
+  $('#videoPanel').hidden=false; $('#lane').style.display=G.freePlay?'none':'block';
+  $('#videoTitle').textContent=G.song.title+' — '+OFFICIAL[G.song.id].channel;
+  $('#videoLink').href='https://www.youtube.com/watch?v='+OFFICIAL[G.song.id].id;
+  $('#videoStatus').textContent='載入官方播放器…';
+  $('#btnPause').textContent='繼續'; updHUD(); go('scPlay');
+  if(G.freePlay){
+    $('#curChord').textContent='跟彈'; $('#curDiagram').innerHTML=''; $('#nextChord').textContent='聽原唱・練手感';$('#nextDiagram').innerHTML='';
+    $('#curHint').textContent='目前不判對錯，右側顯示你彈的和弦';$('#progN').textContent='0:00';
+  }else{buildOriginalNotes();showChord();}
+  $('#btnStart').disabled=true;
+  const token=G.loadToken=(G.loadToken||0)+1;
+  try{
+    await A.ctx.resume(); await loadYouTube();
+    if(G.loadToken!==token || !$('#scPlay').classList.contains('on'))return;
+    G.running=true; A.onOnset=onPlayerStrum; Y.lastTime=null;Y.lastWall=null;
+    Y.player.setVolume(+$('#youtubeVolume').value); Y.player.setPlaybackRate(1);
+    Y.player.loadVideoById({videoId:OFFICIAL[G.song.id].id,startSeconds:chart.length?Math.max(0,chart[0].time-3):0});
+    G.timer=setInterval(tickYouTube,30);
+  }catch(e){$('#videoStatus').textContent=e.message;toast(e.message,5000);}
+  finally{$('#btnStart').disabled=false;}
+}
+function buildOriginalNotes(){
+  const lane=$('#lane');lane.querySelectorAll('.note,.barlab').forEach(e=>e.remove());
+  const pat=G.diff==='easy'?[1,0,0,0,0,0,0,0]:G.diff==='mid'?[1,0,1,0,1,0,1,0]:G.pattern.hits;
+  G.chart.forEach((row,ci)=>{
+    if(row.chord==='REST')return;
+    pat.forEach((hit,slot)=>{
+      if(!hit)return;
+      const el=document.createElement('div');el.className='note';el.textContent=dirOf(slot);lane.appendChild(el);
+      G.notes.push({t:row.time+(row.end-row.time)*slot/8,el,chordIdx:ci,chord:row.chord,slot,state:null,isFirst:slot===pat.findIndex(Boolean)});
+    });
+  });
+  G.startAt=G.chart[0].time;G.leadBars=0;G.endAt=G.chart.at(-1).end;
+}
+function tickYouTube(){
+  if(!G.running)return;
+  drawDetect();
+  const now=gameTime(),wall=performance.now()/1000;
+  // Seeking makes the current score incomparable. Finish the partial take, never mark skipped notes as misses.
+  if(Y.lastTime!==null && Math.abs((now-Y.lastTime)-(youtubePlaying()?(wall-Y.lastWall)*(Y.player.getPlaybackRate()||1):0))>1.2){
+    endGame();toast('影片位置已移動，本次已結算。按再來一次重新練習。',4500);return;
+  }
+  Y.lastTime=now;Y.lastWall=wall;
+  if(!youtubePlaying() || G.paused)return;
+  $('#playSec').textContent=formatTime(now)+' / '+formatTime(Y.player.getDuration());
+  if(G.freePlay){$('#progN').textContent=formatTime(now);return;}
+  if(now<G.chart[0].time){$('#curHint').textContent=`準備… ${Math.ceil(G.chart[0].time-now)} 秒`;}
+  tickRhythm();
+}
+async function togglePause(forcePause=false){
+  if(!G.running)return;
+  if(G.youtube){
+    if(forcePause || youtubePlaying())Y.player.pauseVideo();
+    else {await A.ctx.resume();Y.player.playVideo();}
+    return;
+  }
+  G.paused=forcePause||!G.paused;
+  if(G.paused)await A.ctx.suspend();else await A.ctx.resume();
+  $('#btnPause').textContent=G.paused?'繼續':'暫停';
+}
+$('#sourceMode').onchange=refreshOriginalSettings;
+$('#youtubeVolume').oninput=()=>{if(Y.ready)Y.player.setVolume(+$('#youtubeVolume').value);};
+$('#btnPause').onclick=()=>togglePause();
+$('#saveOriginalChart').onclick=()=>{
+  if(!G.song || !OFFICIAL[G.song.id])return;
+  try{parseOriginalChart($('#originalChart').value);localStorage.setItem(chartKey(),$('#originalChart').value.trim());refreshOriginalSettings();$('#chartStatus').textContent='已儲存在這台瀏覽器。';}
+  catch(e){$('#chartStatus').textContent=e.message;}
+};
+$('#clearOriginalChart').onclick=()=>{
+  if(!G.song || !OFFICIAL[G.song.id])return;
+  try{localStorage.removeItem(chartKey());refreshOriginalSettings();}catch(e){toast('瀏覽器不允許儲存設定');}
+};
 
 /* ==========================================================
    介面綁定
@@ -1021,7 +1241,7 @@ $('#btnMic').onclick = async ()=>{
     toast('拿不到聲音輸入：' + e.message, 4000);
   }
 };
-$('#devSel').onchange = ()=>{ if (A.running) initAudio($('#devSel').value); };
+$('#devSel').onchange = async ()=>{ if (A.running) try{await initAudio($('#devSel').value);}catch(e){toast('切換輸入失敗：'+e.message,4000);} };
 $('#sens').oninput = e => { $('#sensVal').textContent = e.target.value; setSens(+e.target.value); };
 
 /* ---------- 自動校準 ---------- */
@@ -1078,18 +1298,22 @@ $$('#diffRow button').forEach(b=>{
 });
 $('#bpm').oninput = e => $('#bpmVal').textContent = e.target.value;
 $('#btnStart').onclick = startGame;
-$('#btnQuit').onclick = ()=>{ quitGame(); go('scSelect'); };
+$('#btnQuit').onclick = ()=>{ G.loadToken=(G.loadToken||0)+1; if(G.running)endGame();else{quitGame();go('scSelect');} };
 $('#btnRetry').onclick = startGame;
 
 /* ---------- 自己的伴奏音檔（只留在這台電腦，不會上傳） ---------- */
 $('#btnBgPick').onclick = ()=> $('#bgFile').click();
 $('#bgFile').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
+  if(!G.song){toast('請先選歌，再載入這首的音檔');return;}
+  const songId=G.song.id; G.bgBuffer=null;
   try{
     if (!A.ctx) A.ctx = new (window.AudioContext||window.webkitAudioContext)();
     $('#bgName').textContent = '讀取中…';
     const buf = await f.arrayBuffer();
-    G.bgBuffer = await A.ctx.decodeAudioData(buf);
+    const decoded = await A.ctx.decodeAudioData(buf);
+    if(!G.song || G.song.id!==songId)return;
+    G.bgBuffer = decoded;
     $('#bgName').textContent = `${f.name}（${G.bgBuffer.duration.toFixed(1)} 秒）`;
     toast('伴奏載入好了，記得把 BPM 調成跟這首歌一樣');
   }catch(err){
@@ -1097,11 +1321,8 @@ $('#bgFile').onchange = async e => {
     toast('讀不出來：' + err.message, 3500);
   }
 };
-$('#btnBgClear').onclick = ()=>{
-  G.bgBuffer = null; $('#bgFile').value = '';
-  $('#bgName').textContent = '未載入（用內建伴奏）';
-};
-$('#backVol').oninput = ()=>{ if (A.backGain) A.backGain.gain.value = (+$('#backVol').value/100)*0.5; };
+$('#btnBgClear').onclick = clearLocalAudio;
+$('#backVol').oninput = ()=>{ if (A.backGain) A.backGain.gain.value = (+$('#backVol').value/100)*0.5; if(G.bgGain)G.bgGain.gain.value=+$('#backVol').value/100; };
 
 /* ---------- 和弦譜編輯器 ---------- */
 function editorOpen(){
@@ -1132,11 +1353,12 @@ $('#edSave').onclick = ()=>{
   for (const t of toks){
     if (t.includes('=')){
       const [n, sh] = t.split('=');
-      if (!/^[0-9xX]{6}$/.test(sh)){ $('#edMsg').textContent = `指法要六個字元：${t}`; return; }
+      if (!/^[A-G][#b]?(?:m|maj|sus|add|dim|aug)?[0-9]*(?:\/[A-G][#b]?)?$/.test(n) || !/^[0-9xX]{6}$/.test(sh)){ $('#edMsg').textContent = `指法要六個字元：${t}`; return; }
       SHAPES[n] = sh.toLowerCase();
       out.push(n);
     } else out.push(t);
   }
+  if(!out.length){$('#edMsg').textContent='請至少輸入一個和弦';return;}
   const bad = out.filter(c=>!chordInfo(c));
   if (bad.length){ $('#edMsg').textContent = '沒有指法的和弦：' + [...new Set(bad)].join(' ') + '（可用 名稱=指法 自己定義）'; return; }
   sg.sections[+$('#edSec').value].chords = out.join(' ');
@@ -1192,8 +1414,8 @@ $('#edReset').onclick = ()=>{
   // 切到別的分頁時瀏覽器會凍結計時器，拍子會整個跑掉 —— 直接停下來比較誠實
   document.addEventListener('visibilitychange', ()=>{
     if (document.hidden && G.running){
-      quitGame(); go('scSelect');
-      toast('切到別的分頁了，這段重新開始比較準', 3000);
+      togglePause(true);
+      toast('已暫停，回來後按「繼續」接著練。', 3000);
     }
   });
 })();

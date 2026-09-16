@@ -1,6 +1,6 @@
 # 把 build/ 裡的分段檔組成單一 HTML，並內嵌蠑螈圖
 import os, re
-parts = ['01_head.html','02_body.html','03_data.js','04_audio.js','05_game.js','06_ui.js']
+parts = ['01_head.html','02_body.html','03_data.js','04_audio.js','05_game.js','05_media.js','06_ui.js']
 d = os.path.dirname(os.path.abspath(__file__))
 root = os.path.dirname(d)
 html = ''.join(open(os.path.join(d,p), encoding='utf-8').read() for p in parts)

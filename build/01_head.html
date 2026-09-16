@@ -138,6 +138,17 @@ textarea{width:100%;height:150px;background:var(--bg3);color:var(--ink);border:1
 #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#000c;border:1px solid var(--line);
   padding:10px 20px;border-radius:99px;font-size:14px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
 #toast.on{opacity:1}
+
+#videoPanel:not([hidden]){display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin-top:12px}
+#youtubePlayer{width:480px;max-width:100%;height:270px;border:0;border-radius:12px}
+.video-info{flex:1;min-width:200px} a{color:var(--aqua)}
+#scPlay:has(#videoPanel:not([hidden])) #playMid{min-height:260px}
+#scPlay:has(#videoPanel:not([hidden])) #axo{max-width:180px}
+#scPlay:has(#videoPanel:not([hidden])) .axo-wrap{max-width:200px}
+#originalSettings summary{cursor:pointer;color:var(--aqua);padding:8px 0}
+#resTrans,#resTable{overflow-x:auto} button:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--aqua);outline-offset:4px}
+@media(max-width:600px){.screen{padding:14px}h1{font-size:32px}.card{max-width:100%}#youtubePlayer{width:100%;height:220px}.video-info{min-width:0}#scResult{justify-content:flex-start!important}#scResult .card{min-width:0!important;flex-basis:100%!important}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>

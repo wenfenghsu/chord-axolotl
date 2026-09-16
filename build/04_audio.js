@@ -24,12 +24,16 @@ async function listDevices(){
 }
 
 async function initAudio(deviceId){
-  if (A.stream) A.stream.getTracks().forEach(t=>t.stop());
   const constraints = {audio:{
     echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1
   }};
   if (deviceId) constraints.audio.deviceId = {exact:deviceId};
-  A.stream = await navigator.mediaDevices.getUserMedia(constraints);
+  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  if (A.stream) A.stream.getTracks().forEach(t=>t.stop());
+  if (A.src) A.src.disconnect();
+  if (A.filters) A.filters.forEach(node=>node.disconnect());
+  A.stream = stream;
+  A.lastOnset=0; _fluxHist=[];
   if (!A.ctx) A.ctx = new (window.AudioContext||window.webkitAudioContext)();
   await A.ctx.resume();
   A.sr = A.ctx.sampleRate;
@@ -37,6 +41,7 @@ async function initAudio(deviceId){
   A.src = A.ctx.createMediaStreamSource(A.stream);
   const hp = A.ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=65; hp.Q.value=0.7;
   const lp = A.ctx.createBiquadFilter(); lp.type='lowpass';  lp.frequency.value=4000;
+  A.filters=[hp,lp];
 
   A.big = A.ctx.createAnalyser();   A.big.fftSize = 16384; A.big.smoothingTimeConstant = 0;
   A.small = A.ctx.createAnalyser(); A.small.fftSize = 2048; A.small.smoothingTimeConstant = 0;

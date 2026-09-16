@@ -48,7 +48,7 @@ $('#btnMic').onclick = async ()=>{
     toast('拿不到聲音輸入：' + e.message, 4000);
   }
 };
-$('#devSel').onchange = ()=>{ if (A.running) initAudio($('#devSel').value); };
+$('#devSel').onchange = async ()=>{ if (A.running) try{await initAudio($('#devSel').value);}catch(e){toast('切換輸入失敗：'+e.message,4000);} };
 $('#sens').oninput = e => { $('#sensVal').textContent = e.target.value; setSens(+e.target.value); };
 
 /* ---------- 自動校準 ---------- */
@@ -105,18 +105,22 @@ $$('#diffRow button').forEach(b=>{
 });
 $('#bpm').oninput = e => $('#bpmVal').textContent = e.target.value;
 $('#btnStart').onclick = startGame;
-$('#btnQuit').onclick = ()=>{ quitGame(); go('scSelect'); };
+$('#btnQuit').onclick = ()=>{ G.loadToken=(G.loadToken||0)+1; if(G.running)endGame();else{quitGame();go('scSelect');} };
 $('#btnRetry').onclick = startGame;
 
 /* ---------- 自己的伴奏音檔（只留在這台電腦，不會上傳） ---------- */
 $('#btnBgPick').onclick = ()=> $('#bgFile').click();
 $('#bgFile').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
+  if(!G.song){toast('請先選歌，再載入這首的音檔');return;}
+  const songId=G.song.id; G.bgBuffer=null;
   try{
     if (!A.ctx) A.ctx = new (window.AudioContext||window.webkitAudioContext)();
     $('#bgName').textContent = '讀取中…';
     const buf = await f.arrayBuffer();
-    G.bgBuffer = await A.ctx.decodeAudioData(buf);
+    const decoded = await A.ctx.decodeAudioData(buf);
+    if(!G.song || G.song.id!==songId)return;
+    G.bgBuffer = decoded;
     $('#bgName').textContent = `${f.name}（${G.bgBuffer.duration.toFixed(1)} 秒）`;
     toast('伴奏載入好了，記得把 BPM 調成跟這首歌一樣');
   }catch(err){
@@ -124,11 +128,8 @@ $('#bgFile').onchange = async e => {
     toast('讀不出來：' + err.message, 3500);
   }
 };
-$('#btnBgClear').onclick = ()=>{
-  G.bgBuffer = null; $('#bgFile').value = '';
-  $('#bgName').textContent = '未載入（用內建伴奏）';
-};
-$('#backVol').oninput = ()=>{ if (A.backGain) A.backGain.gain.value = (+$('#backVol').value/100)*0.5; };
+$('#btnBgClear').onclick = clearLocalAudio;
+$('#backVol').oninput = ()=>{ if (A.backGain) A.backGain.gain.value = (+$('#backVol').value/100)*0.5; if(G.bgGain)G.bgGain.gain.value=+$('#backVol').value/100; };
 
 /* ---------- 和弦譜編輯器 ---------- */
 function editorOpen(){
@@ -159,11 +160,12 @@ $('#edSave').onclick = ()=>{
   for (const t of toks){
     if (t.includes('=')){
       const [n, sh] = t.split('=');
-      if (!/^[0-9xX]{6}$/.test(sh)){ $('#edMsg').textContent = `指法要六個字元：${t}`; return; }
+      if (!/^[A-G][#b]?(?:m|maj|sus|add|dim|aug)?[0-9]*(?:\/[A-G][#b]?)?$/.test(n) || !/^[0-9xX]{6}$/.test(sh)){ $('#edMsg').textContent = `指法要六個字元：${t}`; return; }
       SHAPES[n] = sh.toLowerCase();
       out.push(n);
     } else out.push(t);
   }
+  if(!out.length){$('#edMsg').textContent='請至少輸入一個和弦';return;}
   const bad = out.filter(c=>!chordInfo(c));
   if (bad.length){ $('#edMsg').textContent = '沒有指法的和弦：' + [...new Set(bad)].join(' ') + '（可用 名稱=指法 自己定義）'; return; }
   sg.sections[+$('#edSec').value].chords = out.join(' ');
@@ -219,8 +221,8 @@ $('#edReset').onclick = ()=>{
   // 切到別的分頁時瀏覽器會凍結計時器，拍子會整個跑掉 —— 直接停下來比較誠實
   document.addEventListener('visibilitychange', ()=>{
     if (document.hidden && G.running){
-      quitGame(); go('scSelect');
-      toast('切到別的分頁了，這段重新開始比較準', 3000);
+      togglePause(true);
+      toast('已暫停，回來後按「繼續」接著練。', 3000);
     }
   });
 })();
